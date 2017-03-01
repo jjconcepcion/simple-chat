@@ -125,6 +125,8 @@ void GetUserList(int sock) {
     if(recv(sock, recvBuffer, bytesToRead, 0) <= 0)
       DieWithError("recv() failed or connection closed prematurely");
     
+    recvBuffer[bytesToRead] = '\0';
+    
     printf("%s\n", recvBuffer);
     
     if (recv(sock, &bytesToRead, sizeof(int), 0) <= 0)
