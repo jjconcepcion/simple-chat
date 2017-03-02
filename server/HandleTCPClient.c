@@ -6,11 +6,15 @@
 
 #define RCVBUFSIZE 32 /* Size of receive buffer */
 #define USERFILE_PATH "./data/users.dat"
+#define MESSAGE_DIR "./messages/"
 #define MAX_USERS 100
+#define MSG_BUF_SIZE 4096
 #define MAX_NAME_LEN 20
+#define MAX_PATH_LEN 64
 
 void DieWithError(char *errorMessage); /* Error handling function */
 void SendUserList(int clientSocket, char *filename);
+void StoreUserMessage(int clientSocket, char *directory);
 void itoa(int n, char s[]);
   
 void HandleTCPClient(int clientSocket)
@@ -24,15 +28,19 @@ void HandleTCPClient(int clientSocket)
     if (recv(clientSocket, &bytesToRead, sizeof(int), 0) < 0)
       DieWithError("recv() failed");
 
-    while (bytesToRead > 0)
+    while(bytesToRead > 0)
     {
       /* Receive request from client */
       if (recv(clientSocket, requestBuffer, bytesToRead, 0) < 0)
         DieWithError("recv() failed");
 
-      if (strncmp(requestBuffer, "USERLIST", bytesToRead) == 0)
+      if(strncmp(requestBuffer, "USERLIST", bytesToRead) == 0)
       {
         SendUserList(clientSocket, USERFILE_PATH);
+      }
+      else if(strncmp(requestBuffer, "SEND_MSG", bytesToRead) == 0) 
+      {
+        StoreUserMessage(clientSocket, MESSAGE_DIR);
       }
       else 
       {
@@ -46,7 +54,8 @@ void HandleTCPClient(int clientSocket)
   }
 }
 
-void SendUserList(int clientSocket, char *filename) {
+void SendUserList(int clientSocket, char *filename)
+{
   char users[MAX_USERS][MAX_NAME_LEN] = {0};
   int count, index, prefix;
   FILE *file;
@@ -70,7 +79,7 @@ void SendUserList(int clientSocket, char *filename) {
   
   char openingMsg[32] = {0};
   char tmpStr1[] = "There are \0";
-  char tmpStr2[] = " user(s)\0";
+  char tmpStr2[] = " user\0";
   char number[10] = {0};
   itoa(count, number);
   
@@ -113,5 +122,44 @@ void SendUserList(int clientSocket, char *filename) {
     DieWithError("send() failed");
     
   free(line);
+  fclose(file);
+}
+
+void StoreUserMessage(int clientSocket, char *directory)
+{
+  FILE *file;
+  char path[MAX_PATH_LEN] = {0};
+  char data[MSG_BUF_SIZE+MAX_NAME_LEN+1];
+  char recvBuffer[RCVBUFSIZE]= {0};
+  char *user, *msg;
+  int bytesToRead;
+  
+  /* bytesToRead gets length of next message */
+  if(recv(clientSocket, &bytesToRead, sizeof(int), 0) <= 0)
+    DieWithError("recv() failed or connection closed prematurely");
+  
+  while(bytesToRead > 0)
+  {
+    /* recieve message segments */
+    if(recv(clientSocket, recvBuffer, bytesToRead, 0) <= 0)
+      DieWithError("recv() failed or connection closed prematurely");
+    
+    strncat(data, recvBuffer, bytesToRead);
+    
+    if (recv(clientSocket, &bytesToRead, sizeof(int), 0) <= 0)
+      DieWithError("recv() failed or connection closed prematurely");
+  }
+  
+  /* parse relevant tokens */
+  user = strtok(data, ":");
+  msg = strtok(NULL, "\n");
+  
+  /* generate path for message file */
+  strncat(path, directory, strlen(directory));
+  strncat(path, user, strlen(user));
+  
+  /* append message to file */
+  file = fopen(path, "a");
+  fprintf(file, msg);
   fclose(file);
 }

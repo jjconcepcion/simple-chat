@@ -6,11 +6,14 @@
 #include <unistd.h> /* for close() */
 
 #define RCVBUFSIZE 32 /* Size of receive buffer */
+#define MSG_BUF_SIZE 4096
+#define MAX_NAME_LEN 20
 
 void DieWithError(char *errorMessage);
 void PrintMenuOptions();
 void ConnectToServer(int sock, struct sockaddr_in serverAddr);
 void GetUserList(int sock);
+void SendTextMessage(int sock);
   
 int main(int argc, char *argv[])
 {
@@ -36,7 +39,7 @@ int main(int argc, char *argv[])
         GetUserList(sock);
         break;
       case '2': 
-        printf("you entered: %c\n", option);
+        SendTextMessage(sock);
         break;
       case '3': 
         printf("you entered: %c\n", option);
@@ -58,7 +61,8 @@ int main(int argc, char *argv[])
   exit(0);
 }
 
-void PrintMenuOptions(void) {
+void PrintMenuOptions(void)
+{
   printf("----------------------------------------\n");
   printf("Command:\n");
   printf("0. Connect to the server\n");
@@ -97,7 +101,8 @@ void ConnectToServer(int sock, struct sockaddr_in serverAddr)
 
 }
 
-void GetUserList(int sock) {
+void GetUserList(int sock)
+{
   const char request[] = "USERLIST\0";
   char recvBuffer[RCVBUFSIZE] = {0};
   int bytesToRead = 0;
@@ -132,4 +137,67 @@ void GetUserList(int sock) {
     if (recv(sock, &bytesToRead, sizeof(int), 0) <= 0)
       DieWithError("recv() failed or connection closed prematurely");
   }
+}
+
+void SendTextMessage(int sock)
+{
+  char request[] = "SEND_MSG";
+  char user[MAX_NAME_LEN];
+  char message[MSG_BUF_SIZE];
+  char buffer[MAX_NAME_LEN+MSG_BUF_SIZE+1];
+  char sendBuffer[RCVBUFSIZE];
+  int sendLength;
+  char *remaining;
+  
+  printf("Please Enter the user name: ");
+  fgets(user, sizeof(user), stdin);
+  
+  printf("Please enter the message: ");
+  fgets(message, sizeof(message), stdin);
+ 
+  /* format for transmission (user:message) */
+  strncat(buffer,user, strlen(user)-1); // exclude newline
+  strncat(buffer,":", 1); //delimiter
+  strncat(buffer, message, strlen(message));
+  
+  
+  /* send request message */
+  sendLength = strlen(request);
+  if(send(sock, &sendLength, sizeof(int), 0) != sizeof(int))
+    DieWithError("send() sent a different number of bytes than expected");
+  if(send(sock, request, sendLength, 0) != sendLength)
+    DieWithError("send() sent a different number of bytes than expected");
+  
+  remaining = buffer; // start of next message segment
+  
+  /* send text message in multiple transmissions */
+  while(strlen(remaining) > RCVBUFSIZE)
+  {
+    strncpy(sendBuffer, remaining, RCVBUFSIZE);
+    
+    sendLength = RCVBUFSIZE;
+    
+    if(send(sock, &sendLength, sizeof(int), 0) != sizeof(int))
+      DieWithError("send() failed");
+    if (send(sock, sendBuffer, sendLength, 0) != sendLength)
+      DieWithError("send() failed");
+  
+    remaining += RCVBUFSIZE; //advance RCVBUFSIZE character positions
+  }
+  
+  /* send final message segment */
+  strncpy(sendBuffer, remaining, RCVBUFSIZE);
+  sendLength = strlen(sendBuffer);
+  
+  if(send(sock, &sendLength, sizeof(int), 0) != sizeof(int))
+    DieWithError("send() failed");
+  if (send(sock, sendBuffer, sendLength, 0) != sendLength)
+    DieWithError("send() failed");
+
+  /* signal end of transmission */
+  sendLength = 0;
+  if(send(sock, &sendLength, sizeof(int), 0) != sizeof(int))
+    DieWithError("send() failed");
+     
+  printf("\n");
 }
