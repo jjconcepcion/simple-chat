@@ -14,7 +14,10 @@ void PrintMenuOptions();
 void ConnectToServer(int sock, struct sockaddr_in serverAddr);
 void GetUserList(int sock);
 void SendTextMessage(int sock);
+void GetTextMessages(int sock);
   
+char userName[MAX_NAME_LEN] = "Bob";
+
 int main(int argc, char *argv[])
 {
   int sock; /* Socket descriptor */
@@ -42,15 +45,13 @@ int main(int argc, char *argv[])
         SendTextMessage(sock);
         break;
       case '3': 
-        printf("you entered: %c\n", option);
+        GetTextMessages(sock);
         break;
       case '4': 
         printf("you entered: %c\n", option);
         break;
       case '5': 
         printf("you entered: %c\n", option);
-        break;
-      case 's': // test echo server
         break;
       default:
         printf("Invalid option\n");
@@ -199,5 +200,47 @@ void SendTextMessage(int sock)
   if(send(sock, &sendLength, sizeof(int), 0) != sizeof(int))
     DieWithError("send() failed");
      
+  printf("\n");
+}
+
+void GetTextMessages(int sock) {
+  const char request[] = "GET_MSG\0";
+  char recvBuffer[RCVBUFSIZE] = {0};
+  int bytesToRead = 0;
+  int bytesToSend;
+  int prefix;
+  
+  bytesToSend = strlen(request);
+  
+  /* send request */
+  prefix = bytesToSend;
+  if(send(sock, &prefix, sizeof(int), 0) != sizeof(int))
+    DieWithError("send() sent a different number of bytes than expected");
+  if(send(sock, request, bytesToSend, 0) != bytesToSend)
+    DieWithError("send() sent a different number of bytes than expected");
+  
+  /* send username */ 
+  bytesToSend = strlen(userName);
+  if(send(sock, &bytesToSend, sizeof(int), 0) != sizeof(int))
+    DieWithError("send() sent a different number of bytes than expected");
+  if(send(sock, userName, bytesToSend, 0) != bytesToSend)
+    DieWithError("send() sent a different number of bytes than expected");
+
+  /* bytesToRead gets length of next message */
+  if(recv(sock, &bytesToRead, sizeof(int), 0) <= 0)
+    DieWithError("recv() failed or connection closed prematurely");
+  
+  while(bytesToRead > 0)
+  {
+    /* recieve message segments */
+    if(recv(sock, recvBuffer, bytesToRead, 0) <= 0)
+      DieWithError("recv() failed or connection closed prematurely");
+    
+    printf("%s\n",recvBuffer);
+    
+    if (recv(sock, &bytesToRead, sizeof(int), 0) <= 0)
+      DieWithError("recv() failed or connection closed prematurely");
+  }
+  
   printf("\n");
 }
