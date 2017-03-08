@@ -20,7 +20,8 @@ Message *createMessage(enum code opcode, char* body) {
   msg->opCode = opcode;
   msg->bodyLength = strlen(body);
   msg->body = (char*) malloc(msg->bodyLength + 1);
-  strncpy(msg->body, body, msg->bodyLength);
+  if(msg->bodyLength > 0)
+    strncpy(msg->body, body, msg->bodyLength);
   msg->body[msg->bodyLength] = '\0';
   msg->length = sizeof(int)*2 + sizeof(enum code) + msg->bodyLength + 1;
 
@@ -48,8 +49,10 @@ Message *readMessageFromSocket(int sock) {
   
   msg->body = (char*) malloc(sizeof(msg->bodyLength)+1); 
   /* get body */
-  if( recv(sock, msg->body, msg->bodyLength, 0) <=0 )
-    error = true;
+  if(msg->bodyLength > 0) {
+    if( recv(sock, msg->body, msg->bodyLength, 0) <=0 )
+      error = true;  
+  }
   msg->body[msg->bodyLength] = '\0';
   
   if(error) {
@@ -71,8 +74,10 @@ int sendMessage(int sock, Message *msg) {
     retval = error;
   if(send(sock, &(msg->bodyLength), sizeof(int), 0) != sizeof(int))
     retval = error;
-  if(send(sock, msg->body, msg->bodyLength, 0) != msg->bodyLength)
-    retval = error;
-  
+  if(msg->bodyLength > 0) {
+    if(send(sock, msg->body, msg->bodyLength, 0) != msg->bodyLength)
+      retval = error;
+  }
+ 
   return retval;
 }
