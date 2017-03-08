@@ -5,13 +5,14 @@
 #include <string.h> /* for memset() */
 #include <unistd.h> /* for close() */
 
-#define RCVBUFSIZE 32 /* Size of receive buffer */
+#define RCVBUFSIZE 128  /* Size of receive buffer */
 #define MSG_BUF_SIZE 4096
 #define MAX_NAME_LEN 20
 
 void DieWithError(char *errorMessage);
 void PrintMenuOptions();
 void ConnectToServer(int sock, struct sockaddr_in serverAddr);
+void Login(int sock);
 void GetUserList(int sock);
 void SendTextMessage(int sock);
 void GetTextMessages(int sock);
@@ -95,11 +96,49 @@ void ConnectToServer(int sock, struct sockaddr_in serverAddr)
   serverAddr.sin_addr.s_addr = inet_addr(serverIP); /* Server IP address */
   serverAddr.sin_port = htons(serverPort); /* Server port */
 
-
+  printf("Connecting...\n");
   /* Establish the connection to the echo server */
   if (connect(sock, (struct sockaddr *) &serverAddr, sizeof(serverAddr)) < 0)
     DieWithError(" connect () failed");
+  
+  printf("Connected!\n");
+  
+  Login(sock);
+}
 
+void Login(int sock) {
+  char request[] = "LOGIN";
+  char user[MAX_NAME_LEN] = {0};
+  char password[32] = {0};
+  char credentials[128] = {0};
+  int length;
+  
+  printf("Username: ");
+  fgets(user, sizeof(user), stdin);
+  printf("Password: ");
+  fgets(password, sizeof(password), stdin);
+  
+  strncat(credentials, user, strlen(user)-1);
+  strncat(credentials, ":", 1);
+  strncat(credentials, password, strlen(password)-1);
+  
+  
+  /* send request segment */
+  length = strlen(request);
+  if(send(sock, &length, sizeof(int), 0) != sizeof(int))
+    DieWithError("send() sent a different number of bytes than expected");
+  if(send(sock, request, length, 0) != length)
+    DieWithError("send() sent a different number of bytes than expected");
+  
+  /* send credentials */
+  length = strlen(credentials);
+    if(send(sock, &length, sizeof(int), 0) != sizeof(int))
+    DieWithError("send() sent a different number of bytes than expected");
+  if(send(sock, credentials, length, 0) != length)
+    DieWithError("send() sent a different number of bytes than expected");
+  
+  /* receive ok response */
+  printf("\n");
 }
 
 void GetUserList(int sock)
@@ -143,14 +182,14 @@ void GetUserList(int sock)
 void SendTextMessage(int sock)
 {
   char request[] = "SEND_MSG";
-  char user[MAX_NAME_LEN];
-  char message[MSG_BUF_SIZE];
-  char buffer[MAX_NAME_LEN+MSG_BUF_SIZE+1];
-  char sendBuffer[RCVBUFSIZE];
+  char user[MAX_NAME_LEN] = {0};
+  char message[MSG_BUF_SIZE] = {0};
+  char buffer[MAX_NAME_LEN+MSG_BUF_SIZE+1] = {0};
+  char sendBuffer[RCVBUFSIZE] = {0};
   int sendLength;
   char *remaining;
   
-  printf("Please Enter the user name: ");
+  printf("Please enter the user name: ");
   fgets(user, sizeof(user), stdin);
   
   printf("Please enter the message: ");

@@ -3,9 +3,11 @@
 #include <unistd.h> /* for close() */
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
-#define RCVBUFSIZE 32 /* Size of receive buffer */
+#define RCVBUFSIZE 128 /* Size of receive buffer */
 #define USERFILE_PATH "./data/users.dat"
+#define PASSWD_PATH "./data/passwd"
 #define MESSAGE_DIR "./messages/"
 #define MAX_USERS 100
 #define MAX_NAME_LEN 20
@@ -18,6 +20,7 @@ void DieWithError(char *errorMessage); /* Error handling function */
 void SendUserList(int clientSocket, char *filename);
 void StoreUserMessage(int clientSocket, char *directory);
 void SendUserMessages(int clientSocket, char *directory);
+void Authenticate(int clientSocket, char *path);
 void itoa(int n, char s[]);
   
 void HandleTCPClient(int clientSocket)
@@ -49,9 +52,9 @@ void HandleTCPClient(int clientSocket)
       {
         SendUserMessages(clientSocket, MESSAGE_DIR);
       }
-      else 
+      else if(strncmp(requestBuffer, "LOGIN", bytesToRead) == 0)
       {
-        fprintf(stderr, "SOMETHING ELSE\n"); 
+        Authenticate(clientSocket, PASSWD_PATH);
       }
       
       if (recv(clientSocket, &bytesToRead, sizeof(int), 0) < 0)
@@ -229,7 +232,6 @@ void SendUserMessages(int clientSocket, char *directory)
   if (send(clientSocket, openingMsg, bytesToSend, 0) != bytesToSend)
     DieWithError("send() failed");
   
-  fprintf(stderr, "SENDING...\n");
   /* send messages */
   int index = 0;
   char *remaining;
@@ -242,9 +244,7 @@ void SendUserMessages(int clientSocket, char *directory)
     {
       strncpy(sendBuffer, remaining, RCVBUFSIZE);
       
-      fprintf(stderr, ">%s\n", sendBuffer);
       bytesToSend = RCVBUFSIZE;
-      
       if(send(clientSocket, &bytesToSend, sizeof(int), 0) != sizeof(int))
         DieWithError("send() failed");
       if (send(clientSocket, sendBuffer, bytesToSend, 0) != bytesToSend)
@@ -270,4 +270,28 @@ void SendUserMessages(int clientSocket, char *directory)
     
   free(line);
   fclose(file);
+}
+
+void Authenticate(int clientSocket, char *path)
+{
+  int bytesToRead;
+  char recvBuffer[RCVBUFSIZE] = {0};
+  char recvUserName[MAX_NAME_LEN] = {0};
+  char recvPassWord[64] = {0};
+  char *token;
+     
+  /* get credentials */
+  if(recv(clientSocket, &bytesToRead, sizeof(int), 0) <= 0)
+    DieWithError("recv() failed or connection closed prematurely"); 
+  if(recv(clientSocket, recvBuffer, bytesToRead, 0) <= 0)
+    DieWithError("recv() failed or connection closed prematurely"); 
+  
+  token = strtok(recvBuffer, ":");
+  strncpy(recvUserName, token, strlen(token));
+  printf("Log in User name is %s\n", recvUserName);
+  
+  token = strtok(NULL, ":");
+  strncpy(recvPassWord, token, strlen(token));
+  printf("Log in Password is %s\n", recvPassWord);
+  
 }
