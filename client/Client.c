@@ -162,6 +162,7 @@ void GetUserList(int sock)
   
   request = createMessage(LIST, "");
   status = sendMessage(sock, request);
+  freeMessage(request);
   if(status < 0)
     fprintf(stderr, "Error when sending request for user list\n");
   
@@ -176,6 +177,7 @@ void GetUserList(int sock)
   else {
     fprintf(stderr, "Error: %s\n", response->body);
   }
+  freeMessage(response);
   
 }
 
