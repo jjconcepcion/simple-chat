@@ -47,7 +47,7 @@ Message *readMessageFromSocket(int sock) {
   if( recv(sock, &(msg->bodyLength), sizeof(int), 0) <=0 )
     error = true;
   
-  msg->body = (char*) malloc(sizeof(msg->bodyLength)+1); 
+  msg->body = (char*) malloc(msg->bodyLength+1); 
   /* get body */
   if(msg->bodyLength > 0) {
     if( recv(sock, msg->body, msg->bodyLength, 0) <=0 )
