@@ -8,9 +8,16 @@
 #define MAXPENDING 5 /* Maximum outstanding connection requests */
 #define LOCALHOST "127.0.0.1"
 #define DEFAULT_PORT 8000
+#define USERFILE_PATH "./data/users.dat"
+#define MAX_USERS 100
+#define MAX_NAME_LEN 20
+
+char userList[MAX_USERS][MAX_NAME_LEN+1] = {0};
+unsigned int userListCount = 0;
 
 void DieWithError(char *errorMessage); /* Error handling function */
 void HandleTCPClient(int clientSocketet); /* TCP client handling function */
+void InitializeUserList(char* path);
 
 int main(int argc, char *argv[])
 {
@@ -50,6 +57,8 @@ int main(int argc, char *argv[])
   if (listen(serverSocket, MAXPENDING) < 0)
     DieWithError("listen() failed") ;
   
+  InitializeUserList(USERFILE_PATH);
+  
   printf("Server Started!\n");
   printf("Listen on %s:%d\n" , LOCALHOST, serverPort);
   
@@ -65,4 +74,26 @@ int main(int argc, char *argv[])
     HandleTCPClient (clientSocket);
   }
 /* NOT REACHED */
+}
+
+void InitializeUserList(char* path) {
+  FILE *file;
+  char *line = NULL;
+  size_t len = 0;
+  ssize_t read;
+ 
+  file = fopen(path, "r");
+  if (file == NULL) {
+    DieWithError("Error opening Userlist file\n");
+  }
+  
+  userListCount = 0;
+  while ((read = getline(&line, &len, file)) != -1) {
+    line[read-1] = '\0'; //replace newline
+    strncpy(userList[userListCount], line, strlen(line));
+    userListCount++;
+  }
+
+  free(line);
+  fclose(file);
 }

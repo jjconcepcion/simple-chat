@@ -16,19 +16,55 @@
 #define MAX_MSG 100
 #define MAX_MSG_LEN 4096
 
+enum code { LOGIN, LIST, SEND, GET, OK, FAIL};
+
+typedef struct message {
+  unsigned int length;
+  enum code opCode;
+  unsigned int bodyLength;
+  char * body;
+  
+} Message;
+
+extern char userList[MAX_USERS][MAX_NAME_LEN+1];
+extern unsigned int userListCount;
+
 void DieWithError(char *errorMessage); /* Error handling function */
-void SendUserList(int clientSocket, char *filename);
 void StoreUserMessage(int clientSocket, char *directory);
 void SendUserMessages(int clientSocket, char *directory);
 void Authenticate(int clientSocket, char *path);
 void itoa(int n, char s[]);
+
+Message *readMessageFromSocket(int sock);
+Message *createMessage(enum code opcode, char* body);
+int sendMessage(int sock, Message *msg);
+void freeMessage(Message *msg);
+Message *UserList();
   
 void HandleTCPClient(int clientSocket)
 {
-  char requestBuffer[RCVBUFSIZE] = {0}; /* Buffer for echo string */
-  int bytesToRead;
+  Message *request, *response;
 
   for(;;) {
+    request = readMessageFromSocket(clientSocket);
+    
+    if(request == NULL)
+      exit(1);
+    
+    switch(request->opCode) {
+      case LIST:
+        response = UserList();
+        printf("Return user list!\n");
+        break;
+      default:
+        printf("DEFAULT\n");
+        break;
+    }
+    
+    sendMessage(clientSocket, response);
+    freeMessage(response);
+    
+    /*
     bytesToRead = 0;
     
     if (recv(clientSocket, &bytesToRead, sizeof(int), 0) < 0)
@@ -36,7 +72,7 @@ void HandleTCPClient(int clientSocket)
 
     while(bytesToRead > 0)
     {
-      /* Receive request from client */
+     
       if (recv(clientSocket, requestBuffer, bytesToRead, 0) < 0)
         DieWithError("recv() failed");
 
@@ -60,79 +96,44 @@ void HandleTCPClient(int clientSocket)
       if (recv(clientSocket, &bytesToRead, sizeof(int), 0) < 0)
         DieWithError("recv() failed");
     } 
+    */
     
   }
 }
 
-void SendUserList(int clientSocket, char *filename)
-{
-  char users[MAX_USERS][MAX_NAME_LEN] = {0};
-  int count, index, prefix;
-  FILE *file;
-  char *line = NULL;
-  size_t len = 0;
-  ssize_t read;
+Message *UserList() {
+  Message *response;
+  char *name, *body, *startOfList;
+  unsigned int bytesCopied, index, nameLength, count;
   
-  file = fopen(filename, "r");
-  if(file == NULL)
-    DieWithError("fopen() failed");
+  /* allocate maximum space for newline delimited list of names */
+  body = (char*) malloc(userListCount*(MAX_NAME_LEN+1)+1);
+  /* insert total user count into first 4 bytes of body */
+  count = userListCount;
+  memcpy(body, &count, sizeof(int));
   
-  /* read users file into array */
-  count = 0;
-  while((read = getline(&line, &len, file)) > 0)
-  {
-    line[read-1] = '\0'; //replace newline
-    
-    strncpy(users[count], line, read);
-    count++;
-  }
-  
-  char openingMsg[32] = {0};
-  char tmpStr1[] = "There are \0";
-  char tmpStr2[] = " user(s)\0";
-  char number[10] = {0};
-  itoa(count, number);
-  
-  strncat(openingMsg, tmpStr1, strlen(tmpStr1));
-  strncat(openingMsg, number, strlen(number));
-  strncat(openingMsg, tmpStr2, strlen(tmpStr2));
-  
-  len = strlen(openingMsg);
-  
-  prefix = len;
-  if(send(clientSocket, &prefix, sizeof(int), 0) != sizeof(int))
-    DieWithError("send() failed");
-  
-  if (send(clientSocket, openingMsg, len, 0) != len)
-    DieWithError("send() failed");
-  
-  /* send user names */
+  bytesCopied = sizeof(int);
+  startOfList = body + sizeof(int);
   index = 0;
-  while(index < count)
-  {
-    len = strlen(users[index]);
+  /* add each username to message body */
+  while(index < userListCount) { 
+    name = userList[index];
+    nameLength = strlen(name);
     
-    fprintf(stderr, "%s\n", users[index]);
-        
-    /* send length of message */
-    prefix = (int)len;
-    if(send(clientSocket, &prefix, sizeof(int), 0) != sizeof(int))
-      DieWithError("send() failed");
+    strncat(startOfList, name, nameLength);
+    strncat(startOfList, "\n", 1);
     
-    //send username
-    if (send(clientSocket, users[index], len, 0) != len)
-      DieWithError("send() failed");
-    
+    bytesCopied += nameLength+1;
     index++;
   }
   
-  /* signal end of messages*/
-  prefix = 0;
-  if(send(clientSocket, &prefix, sizeof(int), 0) != sizeof(int))
-    DieWithError("send() failed");
-    
-  free(line);
-  fclose(file);
+  response = (Message*) malloc(sizeof(Message));
+  response->opCode = OK;
+  response->bodyLength = bytesCopied;
+  response->body = realloc(body, bytesCopied+1);
+  response->length = sizeof(int)*2 + sizeof(enum code) + bytesCopied + 1;
+  
+  return response;
 }
 
 void StoreUserMessage(int clientSocket, char *directory)

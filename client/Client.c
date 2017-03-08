@@ -9,6 +9,16 @@
 #define MSG_BUF_SIZE 4096
 #define MAX_NAME_LEN 20
 
+enum code { LOGIN, LIST, SEND, GET, OK, FAIL};
+
+typedef struct message {
+  unsigned int length;
+  enum code opCode;
+  unsigned int bodyLength;
+  char * body;
+  
+} Message;
+
 void DieWithError(char *errorMessage);
 void PrintMenuOptions();
 void ConnectToServer(int sock, struct sockaddr_in serverAddr);
@@ -16,7 +26,10 @@ void Login(int sock);
 void GetUserList(int sock);
 void SendTextMessage(int sock);
 void GetTextMessages(int sock);
-  
+Message *createMessage(enum code opcode, char* body);
+int sendMessage(int sock, Message *msg);
+Message *readMessageFromSocket(int sock);
+
 char userName[MAX_NAME_LEN] = "Bob";
 
 int main(int argc, char *argv[])
@@ -103,7 +116,7 @@ void ConnectToServer(int sock, struct sockaddr_in serverAddr)
   
   printf("Connected!\n");
   
-  Login(sock);
+  //Login(sock);
 }
 
 void Login(int sock) {
@@ -143,40 +156,27 @@ void Login(int sock) {
 
 void GetUserList(int sock)
 {
-  const char request[] = "USERLIST\0";
-  char recvBuffer[RCVBUFSIZE] = {0};
-  int bytesToRead = 0;
-  int bytesToSend;
-  int prefix;
+  int status, userCount;
+  char *userList;
+  Message *request, *response;
   
-  bytesToSend = strlen(request);
+  request = createMessage(LIST, "");
+  status = sendMessage(sock, request);
+  if(status < 0)
+    fprintf(stderr, "Error when sending request for user list\n");
   
-  /* send message length */
-  prefix = bytesToSend;
-  if(send(sock, &prefix, sizeof(int), 0) != sizeof(int))
-    DieWithError("send() sent a different number of bytes than expected");
-
-  /* send request */
-  if(send(sock, request, bytesToSend, 0) != bytesToSend)
-    DieWithError("send() sent a different number of bytes than expected");
-
-  /* bytesToRead gets length of next message */
-  if(recv(sock, &bytesToRead, sizeof(int), 0) <= 0)
-    DieWithError("recv() failed or connection closed prematurely");
+  response = readMessageFromSocket(sock);
   
-  while(bytesToRead > 0)
-  {
-    /* recieve response */
-    if(recv(sock, recvBuffer, bytesToRead, 0) <= 0)
-      DieWithError("recv() failed or connection closed prematurely");
-    
-    recvBuffer[bytesToRead] = '\0';
-    
-    printf("%s\n", recvBuffer);
-    
-    if (recv(sock, &bytesToRead, sizeof(int), 0) <= 0)
-      DieWithError("recv() failed or connection closed prematurely");
+  if(response->opCode == OK) {
+    memcpy(&userCount, response->body, sizeof(int));
+    printf("There are %d user(s)\n", userCount);
+    userList = response->body + sizeof(int);
+    printf("%s\n", userList);  
   }
+  else {
+    fprintf(stderr, "Error: %s\n", response->body);
+  }
+  
 }
 
 void SendTextMessage(int sock)
