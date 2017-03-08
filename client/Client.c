@@ -6,7 +6,7 @@
 #include <unistd.h> /* for close() */
 
 #define RCVBUFSIZE 128  /* Size of receive buffer */
-#define MSG_BUF_SIZE 4096
+#define MAX_MSG_LEN 4096
 #define MAX_NAME_LEN 20
 
 enum code { LOGIN, LIST, SEND, GET, OK, FAIL};
@@ -19,18 +19,20 @@ typedef struct message {
   
 } Message;
 
-void DieWithError(char *errorMessage);
 void PrintMenuOptions();
 void ConnectToServer(int sock, struct sockaddr_in serverAddr);
 void Login(int sock);
+void GetTextMessages(int sock);
+
+void DieWithError(char *errorMessage);
+Message *createMessage(enum code opcode, char* body);
+Message *readMessageFromSocket(int sock);
+int sendMessage(int sock, Message *msg);
+void freeMessage(Message *msg);
 void GetUserList(int sock);
 void SendTextMessage(int sock);
-void GetTextMessages(int sock);
-Message *createMessage(enum code opcode, char* body);
-int sendMessage(int sock, Message *msg);
-Message *readMessageFromSocket(int sock);
 
-char userName[MAX_NAME_LEN] = "Bob";
+static char userName[MAX_NAME_LEN] = "Guest\0";
 
 int main(int argc, char *argv[])
 {
@@ -183,105 +185,66 @@ void GetUserList(int sock)
 
 void SendTextMessage(int sock)
 {
-  char request[] = "SEND_MSG";
-  char user[MAX_NAME_LEN] = {0};
-  char message[MSG_BUF_SIZE] = {0};
-  char buffer[MAX_NAME_LEN+MSG_BUF_SIZE+1] = {0};
-  char sendBuffer[RCVBUFSIZE] = {0};
-  int sendLength;
-  char *remaining;
+  Message *request, *response;
+  char name[MAX_NAME_LEN] = {0};
+  char message[MAX_MSG_LEN] = {0};
+  char body[MAX_NAME_LEN + MAX_MSG_LEN + 2] = {0};
+  unsigned int nameLength, messageLength;
+  int status;
   
   printf("Please enter the user name: ");
-  fgets(user, sizeof(user), stdin);
+  fgets(name, sizeof(name), stdin);
+  nameLength = strlen(name) - 1; //exclude newline
   
   printf("Please enter the message: ");
   fgets(message, sizeof(message), stdin);
+  messageLength = strlen(message) - 1; //exclude newline
  
-  /* format for transmission (user:message) */
-  strncat(buffer,user, strlen(user)-1); // exclude newline
-  strncat(buffer,":", 1); //delimiter
-  strncat(buffer, message, strlen(message));
+  /* format body (recipient:message) */
+  strncat(body, name, nameLength); 
+  strncat(body, ":", 1);
+  strncat(body, message, messageLength);
   
-  
-  /* send request message */
-  sendLength = strlen(request);
-  if(send(sock, &sendLength, sizeof(int), 0) != sizeof(int))
-    DieWithError("send() sent a different number of bytes than expected");
-  if(send(sock, request, sendLength, 0) != sendLength)
-    DieWithError("send() sent a different number of bytes than expected");
-  
-  remaining = buffer; // start of next message segment
-  
-  /* send text message in multiple transmissions */
-  while(strlen(remaining) > RCVBUFSIZE)
-  {
-    strncpy(sendBuffer, remaining, RCVBUFSIZE);
-    
-    sendLength = RCVBUFSIZE;
-    
-    if(send(sock, &sendLength, sizeof(int), 0) != sizeof(int))
-      DieWithError("send() failed");
-    if (send(sock, sendBuffer, sendLength, 0) != sendLength)
-      DieWithError("send() failed");
-  
-    remaining += RCVBUFSIZE; //advance RCVBUFSIZE character positions
-  }
-  
-  /* send final message segment */
-  strncpy(sendBuffer, remaining, RCVBUFSIZE);
-  sendLength = strlen(sendBuffer);
-  
-  if(send(sock, &sendLength, sizeof(int), 0) != sizeof(int))
-    DieWithError("send() failed");
-  if (send(sock, sendBuffer, sendLength, 0) != sendLength)
-    DieWithError("send() failed");
-
-  /* signal end of transmission */
-  sendLength = 0;
-  if(send(sock, &sendLength, sizeof(int), 0) != sizeof(int))
-    DieWithError("send() failed");
+  /* send message */
+  request = createMessage(SEND, body);
+  status = sendMessage(sock, request);
+  freeMessage(request);
+  if(status < 0)
+    fprintf(stderr, "Error when sending message\n");  
      
-  printf("\n");
+  /* wait for response */ 
+  response = readMessageFromSocket(sock);
+  if(response->opCode == OK) {
+    printf("\nmessage sent successfully!\n");
+  }
+  else {
+    fprintf(stderr, "Error: %s\n", response->body);
+  } 
+  freeMessage(response);
 }
 
 void GetTextMessages(int sock) {
-  const char request[] = "GET_MSG\0";
-  char recvBuffer[RCVBUFSIZE] = {0};
-  int bytesToRead = 0;
-  int bytesToSend;
-  int prefix;
+  Message *request, *response;
+  int status, messageCount;
+  char *messages;
   
-  bytesToSend = strlen(request);
-  
+  request = createMessage(GET, userName);
   /* send request */
-  prefix = bytesToSend;
-  if(send(sock, &prefix, sizeof(int), 0) != sizeof(int))
-    DieWithError("send() sent a different number of bytes than expected");
-  if(send(sock, request, bytesToSend, 0) != bytesToSend)
-    DieWithError("send() sent a different number of bytes than expected");
+  status = sendMessage(sock, request);
+  freeMessage(request);
+  if(status < 0)
+    fprintf(stderr, "Error when sending request for messages\n");
   
-  /* send username */ 
-  bytesToSend = strlen(userName);
-  if(send(sock, &bytesToSend, sizeof(int), 0) != sizeof(int))
-    DieWithError("send() sent a different number of bytes than expected");
-  if(send(sock, userName, bytesToSend, 0) != bytesToSend)
-    DieWithError("send() sent a different number of bytes than expected");
-
-  /* bytesToRead gets length of next message */
-  if(recv(sock, &bytesToRead, sizeof(int), 0) <= 0)
-    DieWithError("recv() failed or connection closed prematurely");
-  
-  while(bytesToRead > 0)
-  {
-    /* recieve message segments */
-    if(recv(sock, recvBuffer, bytesToRead, 0) <= 0)
-      DieWithError("recv() failed or connection closed prematurely");
-    
-    printf("%s\n",recvBuffer);
-    
-    if (recv(sock, &bytesToRead, sizeof(int), 0) <= 0)
-      DieWithError("recv() failed or connection closed prematurely");
+  /* wait for response */
+  response = readMessageFromSocket(sock);
+  if(response->opCode == OK) {
+    memcpy(&messageCount, response->body, sizeof(int));
+    printf("You have %d message(s)\n", messageCount);
+    messages = response->body + sizeof(int);
+    printf("%s\n", messages);  
   }
-  
-  printf("\n");
+  else {
+    fprintf(stderr, "Error: %s\n", response->body);
+  }
+  freeMessage(response);
 }

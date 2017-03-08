@@ -12,7 +12,7 @@
 #define MAX_USERS 100
 #define MAX_NAME_LEN 20
 #define MSG_BUF_SIZE 4096
-#define MAX_PATH_LEN 64
+#define MAX_PATH_LEN 1024
 #define MAX_MSG 100
 #define MAX_MSG_LEN 4096
 
@@ -30,8 +30,6 @@ extern char userList[MAX_USERS][MAX_NAME_LEN+1];
 extern unsigned int userListCount;
 
 void DieWithError(char *errorMessage); /* Error handling function */
-void StoreUserMessage(int clientSocket, char *directory);
-void SendUserMessages(int clientSocket, char *directory);
 void Authenticate(int clientSocket, char *path);
 void itoa(int n, char s[]);
 
@@ -40,10 +38,13 @@ Message *createMessage(enum code opcode, char* body);
 int sendMessage(int sock, Message *msg);
 void freeMessage(Message *msg);
 Message *UserList();
+int StoreUserMessage(int clientSocket, Message *request, char *directory);
+Message *UserMessages(Message *request, char *directory);
   
 void HandleTCPClient(int clientSocket)
 {
   Message *request, *response;
+  int status;
 
   for(;;) {
     request = readMessageFromSocket(clientSocket);
@@ -56,61 +57,37 @@ void HandleTCPClient(int clientSocket)
         response = UserList();
         printf("Return user list!\n");
         break;
+      case SEND:
+        status = StoreUserMessage(clientSocket, request, MESSAGE_DIR);
+        if(status == 0)
+          response = createMessage(OK,"");
+        else
+          response = createMessage(FAIL, "server failed to store message\n");
+        break;
+      case GET:
+        response = UserMessages(request, MESSAGE_DIR);
+        break;
       default:
         printf("DEFAULT\n");
         break;
     }
     
     sendMessage(clientSocket, response);
+    freeMessage(request);
     freeMessage(response);
-    
-    /*
-    bytesToRead = 0;
-    
-    if (recv(clientSocket, &bytesToRead, sizeof(int), 0) < 0)
-      DieWithError("recv() failed");
-
-    while(bytesToRead > 0)
-    {
-     
-      if (recv(clientSocket, requestBuffer, bytesToRead, 0) < 0)
-        DieWithError("recv() failed");
-
-      if(strncmp(requestBuffer, "USERLIST", bytesToRead) == 0)
-      {
-        SendUserList(clientSocket, USERFILE_PATH);
-      }
-      else if(strncmp(requestBuffer, "SEND_MSG", bytesToRead) == 0) 
-      {
-        StoreUserMessage(clientSocket, MESSAGE_DIR);
-      }
-      else if(strncmp(requestBuffer, "GET_MSG", bytesToRead) == 0) 
-      {
-        SendUserMessages(clientSocket, MESSAGE_DIR);
-      }
-      else if(strncmp(requestBuffer, "LOGIN", bytesToRead) == 0)
-      {
-        Authenticate(clientSocket, PASSWD_PATH);
-      }
-      
-      if (recv(clientSocket, &bytesToRead, sizeof(int), 0) < 0)
-        DieWithError("recv() failed");
-    } 
-    */
-    
   }
 }
 
 Message *UserList() {
   Message *response;
   char *name, *body, *startOfList;
-  unsigned int bytesCopied, index, nameLength, count;
+  unsigned int bytesCopied, index, nameLength;
   
   /* allocate maximum space for newline delimited list of names */
   body = (char*) malloc(userListCount*(MAX_NAME_LEN+1)+1);
+  bzero(body,userListCount*(MAX_NAME_LEN+1)+1);
   /* insert total user count into first 4 bytes of body */
-  count = userListCount;
-  memcpy(body, &count, sizeof(int));
+  memcpy(body, &userListCount, sizeof(int));
   
   bytesCopied = sizeof(int);
   startOfList = body + sizeof(int);
@@ -136,141 +113,84 @@ Message *UserList() {
   return response;
 }
 
-void StoreUserMessage(int clientSocket, char *directory)
-{
+int StoreUserMessage(int clientSocket, Message *request, char *directory) {
+  char path[MAX_PATH_LEN+1] = {0};
+  char *name, *message;
   FILE *file;
-  char path[MAX_PATH_LEN] = {0};
-  char data[MSG_BUF_SIZE+MAX_NAME_LEN+1];
-  char recvBuffer[RCVBUFSIZE]= {0};
-  char *user, *msg;
-  int bytesToRead;
+  int status = 0;
   
-  /* bytesToRead gets length of next message */
-  if(recv(clientSocket, &bytesToRead, sizeof(int), 0) <= 0)
-    DieWithError("recv() failed or connection closed prematurely");
-  
-  while(bytesToRead > 0)
-  {
-    /* recieve message segments */
-    if(recv(clientSocket, recvBuffer, bytesToRead, 0) <= 0)
-      DieWithError("recv() failed or connection closed prematurely");
-    
-    strncat(data, recvBuffer, bytesToRead);
-    
-    if (recv(clientSocket, &bytesToRead, sizeof(int), 0) <= 0)
-      DieWithError("recv() failed or connection closed prematurely");
-  }
-  
-  /* parse relevant tokens */
-  user = strtok(data, ":");
-  msg = strtok(NULL, "\n");
-  
-  /* generate path for message file */
+  name = strtok(request->body, ":");
+  message = strtok(NULL, "");
+  /* generate appropriate message file path */
   strncat(path, directory, strlen(directory));
-  strncat(path, user, strlen(user));
+  strncat(path, name, strlen(name));
   
-  /* append to file */
   file = fopen(path, "a");
-  fprintf(file, "%s\n", msg);
+  if(file == NULL)
+    status = -1;
+  fprintf(file, "%s\n", message);
   fclose(file);
+  
+  fprintf(stderr,"A message to: %s\n", name);
+  fprintf(stderr,"Message: %s\n", message);
+  
+  return status;
 }
 
-void SendUserMessages(int clientSocket, char *directory)
-{
-  char recvBuffer[RCVBUFSIZE] = {0};
-  char sendBuffer[RCVBUFSIZE] = {0};
-  char user[MAX_NAME_LEN] = {0};
-  char path[MAX_PATH_LEN] = {0};
-  int bytesToRead;
-  
-  /* get username */
-  if(recv(clientSocket, &bytesToRead, sizeof(int), 0) <= 0)
-    DieWithError("recv() failed or connection closed prematurely"); 
-  if(recv(clientSocket, recvBuffer, bytesToRead, 0) <= 0)
-    DieWithError("recv() failed or connection closed prematurely"); 
-  
-  strncpy(user, recvBuffer, bytesToRead);
-  
-  /* generate path to message file */
-  strncat(path, directory, strlen(directory));
-  strncat(path, user, strlen(user));
-  
-  /* open file for reading */
-  char messages[MAX_MSG][MAX_MSG_LEN] = {0};
+Message *UserMessages(Message *request, char *directory) {
+  Message *response = NULL;
+  char path[MAX_PATH_LEN+1] = {0};
+  char *body, *startOfMessages, *name;
+  unsigned int bytesCopied, bytesAllocated, messageCount;
   FILE *file;
   char *line = NULL;
   size_t len = 0;
   ssize_t read;
-  int count;
-  int bytesToSend;
+  
+  /* generate path to user's named message file */
+  strncat(path, directory, strlen(directory));
+  strncat(path, request->body, request->bodyLength);
+  
+  /* allocate space for newline delimited list of messages */
+  bytesAllocated = MAX_MSG_LEN+1;
+  body = (char*) malloc(bytesAllocated);
+  bzero(body,bytesAllocated);
+  startOfMessages = body + sizeof(int);
   
   file = fopen(path, "r");
-  if(file == NULL)
-    DieWithError("fopen() failed");
-  
-  /* read message file into messages */
-  count = 0;
-  while((read = getline(&line, &len, file)) > 0)
-  {
-    line[read-1] = '\0'; //replace newline
-    strncpy(messages[count], line, read);
-    count++;
+  if (file == NULL) {
+    response = createMessage(FAIL, "Messsage(s) could not be retrieved\n");
   }
   
-  char openingMsg[32] = {0};
-  char tmpStr1[] = "You have \0";
-  char tmpStr2[] = " message(s)\0";
-  char number[10] = {0};
-  itoa(count, number);
-  
-  strncat(openingMsg, tmpStr1, strlen(tmpStr1));
-  strncat(openingMsg, number, strlen(number));
-  strncat(openingMsg, tmpStr2, strlen(tmpStr2));
-  
-  bytesToSend = strlen(openingMsg);
-  if(send(clientSocket, &bytesToSend, sizeof(int), 0) != sizeof(int))
-    DieWithError("send() failed");
-  if (send(clientSocket, openingMsg, bytesToSend, 0) != bytesToSend)
-    DieWithError("send() failed");
-  
-  /* send messages */
-  int index = 0;
-  char *remaining;
-  while(index < count)
-  {
-    remaining = messages[index];
-    fprintf(stderr, "%lu:%s", strlen(messages[index]), messages[index]);
-    /* message in segments */
-    while(strlen(remaining) > RCVBUFSIZE) 
-    {
-      strncpy(sendBuffer, remaining, RCVBUFSIZE);
-      
-      bytesToSend = RCVBUFSIZE;
-      if(send(clientSocket, &bytesToSend, sizeof(int), 0) != sizeof(int))
-        DieWithError("send() failed");
-      if (send(clientSocket, sendBuffer, bytesToSend, 0) != bytesToSend)
-        DieWithError("send() failed");
-      
-      remaining += RCVBUFSIZE;
+  bytesCopied = sizeof(int); // bytes reserved for final message count
+  messageCount = 0;
+  while ((read = getline(&line, &len, file)) != -1) {
+    /* grow allocated space if necessary */
+    if( bytesAllocated <= (bytesCopied + read)) {
+      body = (char*) realloc(body, bytesAllocated+MAX_MSG_LEN+1);
+      startOfMessages = body + sizeof(int);
     }
-    
-    /* send final segment */
-    bytesToSend = strlen(remaining);
-    if(send(clientSocket, &bytesToSend, sizeof(int), 0) != sizeof(int))
-      DieWithError("send() failed");
-    if (send(clientSocket, remaining, bytesToSend, 0) != bytesToSend)
-      DieWithError("send() failed");
-
-    index++; //next message
+      
+    strncat(startOfMessages, line, strlen(line));
+    bytesCopied += strlen(line);
+    messageCount++;
   }
   
-  /* signal end of messages*/
-  bytesToSend = 0;
-  if(send(clientSocket, &bytesToSend, sizeof(int), 0) != sizeof(int))
-    DieWithError("send() failed");
-    
+  response = (Message*) malloc(sizeof(Message));
+  memcpy(body, &messageCount, sizeof(int)); // insert total message count
+  body[bytesCopied] = '\0';
+  response->opCode = OK;
+  response->bodyLength = bytesCopied;
+  response->body = realloc(body, bytesCopied+1);
+  response->length = sizeof(int)*2 + sizeof(enum code) + bytesCopied + 1;
+
   free(line);
   fclose(file);
+  
+  name = request->body;
+  printf("Send back %s's messages!\n", name);
+  
+  return response;
 }
 
 void Authenticate(int clientSocket, char *path)
