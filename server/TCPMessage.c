@@ -48,7 +48,7 @@ Message *readMessageFromSocket(int sock) {
   
   msg->body = (char*) malloc(sizeof(msg->bodyLength)+1); 
   /* get body */
-  if( recv(sock, &(msg->body), msg->bodyLength, 0) <=0 )
+  if( recv(sock, msg->body, msg->bodyLength, 0) <=0 )
     error = true;
   msg->body[msg->bodyLength] = '\0';
   
@@ -71,7 +71,7 @@ int sendMessage(int sock, Message *msg) {
     retval = error;
   if(send(sock, &(msg->bodyLength), sizeof(int), 0) != sizeof(int))
     retval = error;
-  if(send(sock, &(msg->body), msg->bodyLength, 0) != msg->bodyLength)
+  if(send(sock, msg->body, msg->bodyLength, 0) != msg->bodyLength)
     retval = error;
   
   return retval;
