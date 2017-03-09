@@ -157,6 +157,7 @@ Message *UserMessages(Message *request, char *directory) {
   /* generate path to user's named message file */
   strncat(path, directory, strlen(directory));
   strncat(path, request->body, request->bodyLength);
+  path[strlen(path)] = '\0';
   
   /* allocate space for newline delimited list of messages */
   bytesAllocated = MAX_MSG_LEN+1;
