@@ -207,10 +207,14 @@ Message *Authenticate(Message *request)
   
   user = ParseCredentials(request->body);
   
-  if(IsAuthorized(user))
+  if(IsAuthorized(user)) {
     response = createMessage(OK,"Login Success!\0");
-  else
+    printf("Log in User name is %s\n", user->username);
+    printf("Log in Password is %s\n", user->password);
+  }
+  else {
     response = createMessage(FAIL, "Login Failed!\0");
+  }
   
   free(user);
   return response;
