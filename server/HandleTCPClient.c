@@ -11,7 +11,7 @@
 #define MESSAGE_DIR "./messages/"
 #define MAX_USERS 100
 #define MAX_NAME_LEN 20
-#define MSG_BUF_SIZE 4096
+#define MAX_PASS_LEN 64
 #define MAX_PATH_LEN 1024
 #define MAX_MSG 100
 #define MAX_MSG_LEN 4096
@@ -23,16 +23,17 @@ typedef struct message {
   enum code opCode;
   unsigned int bodyLength;
   char * body;
-  
 } Message;
+
+typedef struct credential {
+  char username[MAX_NAME_LEN+1];
+  char password[MAX_PASS_LEN+1];
+} Credential;
 
 extern char userList[MAX_USERS][MAX_NAME_LEN+1];
 extern unsigned int userListCount;
 
 void DieWithError(char *errorMessage); /* Error handling function */
-void Authenticate(int clientSocket, char *path);
-void itoa(int n, char s[]);
-
 Message *readMessageFromSocket(int sock);
 Message *createMessage(enum code opcode, char* body);
 int sendMessage(int sock, Message *msg);
@@ -40,6 +41,9 @@ void freeMessage(Message *msg);
 Message *UserList();
 int StoreUserMessage(int clientSocket, Message *request, char *directory);
 Message *UserMessages(Message *request, char *directory);
+Credential *ParseCredentials(char *authInfo);
+bool IsAuthorized(Credential *user);
+Message *Authenticate(Message *request);
   
 void HandleTCPClient(int clientSocket)
 {
@@ -53,6 +57,9 @@ void HandleTCPClient(int clientSocket)
       exit(1);
     
     switch(request->opCode) {
+      case LOGIN:
+          response = Authenticate(request);
+        break;
       case LIST:
         response = UserList();
         printf("Return user list!\n");
@@ -193,26 +200,18 @@ Message *UserMessages(Message *request, char *directory) {
   return response;
 }
 
-void Authenticate(int clientSocket, char *path)
+Message *Authenticate(Message *request)
 {
-  int bytesToRead;
-  char recvBuffer[RCVBUFSIZE] = {0};
-  char recvUserName[MAX_NAME_LEN] = {0};
-  char recvPassWord[64] = {0};
-  char *token;
-     
-  /* get credentials */
-  if(recv(clientSocket, &bytesToRead, sizeof(int), 0) <= 0)
-    DieWithError("recv() failed or connection closed prematurely"); 
-  if(recv(clientSocket, recvBuffer, bytesToRead, 0) <= 0)
-    DieWithError("recv() failed or connection closed prematurely"); 
+  Message *response;
+  Credential *user;
   
-  token = strtok(recvBuffer, ":");
-  strncpy(recvUserName, token, strlen(token));
-  printf("Log in User name is %s\n", recvUserName);
+  user = ParseCredentials(request->body);
   
-  token = strtok(NULL, ":");
-  strncpy(recvPassWord, token, strlen(token));
-  printf("Log in Password is %s\n", recvPassWord);
+  if(IsAuthorized(user))
+    response = createMessage(OK,"Login Success!\0");
+  else
+    response = createMessage(FAIL, "Login Failed!\0");
   
+  free(user);
+  return response;
 }

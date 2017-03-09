@@ -8,6 +8,7 @@
 #define RCVBUFSIZE 128  /* Size of receive buffer */
 #define MAX_MSG_LEN 4096
 #define MAX_NAME_LEN 20
+#define MAX_PASS_LEN 64 
 
 enum code { LOGIN, LIST, SEND, GET, OK, FAIL};
 
@@ -53,6 +54,7 @@ int main(int argc, char *argv[])
     switch(option) {
       case '0': 
         ConnectToServer(sock, serverAddr);
+        Login(sock);
         break;
       case '1': 
         GetUserList(sock);
@@ -117,43 +119,45 @@ void ConnectToServer(int sock, struct sockaddr_in serverAddr)
     DieWithError(" connect () failed");
   
   printf("Connected!\n");
-  
-  //Login(sock);
 }
 
 void Login(int sock) {
-  char request[] = "LOGIN";
-  char user[MAX_NAME_LEN] = {0};
-  char password[32] = {0};
-  char credentials[128] = {0};
-  int length;
+  char username[MAX_NAME_LEN+1] = {0};
+  char password[MAX_PASS_LEN+1] = {0};
+  char body[MAX_NAME_LEN+MAX_PASS_LEN+2] = {0};
+  Message *request, *response;
+  int status;
   
+  printf("Welcome, please log in!\n");
   printf("Username: ");
-  fgets(user, sizeof(user), stdin);
+  fgets(username, sizeof(username), stdin);
   printf("Password: ");
   fgets(password, sizeof(password), stdin);
   
-  strncat(credentials, user, strlen(user)-1);
-  strncat(credentials, ":", 1);
-  strncat(credentials, password, strlen(password)-1);
+  /* generate authorization string; omit newline */
+  strncat(body, username, strlen(username)-1);
+  strncat(body, ":", 1);
+  strncat(body, password, strlen(password)-1);
   
+  /* send request */
+  request = createMessage(LOGIN, body);
+  status = sendMessage(sock, request);
+  freeMessage(request);
+  if(status < 0)
+    fprintf(stderr, "Error when sending login request\n");
   
-  /* send request segment */
-  length = strlen(request);
-  if(send(sock, &length, sizeof(int), 0) != sizeof(int))
-    DieWithError("send() sent a different number of bytes than expected");
-  if(send(sock, request, length, 0) != length)
-    DieWithError("send() sent a different number of bytes than expected");
+  /* get login confirmation */
+  response = readMessageFromSocket(sock);
   
-  /* send credentials */
-  length = strlen(credentials);
-    if(send(sock, &length, sizeof(int), 0) != sizeof(int))
-    DieWithError("send() sent a different number of bytes than expected");
-  if(send(sock, credentials, length, 0) != length)
-    DieWithError("send() sent a different number of bytes than expected");
-  
-  /* receive ok response */
-  printf("\n");
+  if(response->opCode == OK) {
+    /* set authorized userName */
+    strncpy(userName, username, strlen(username)-1);
+    printf("%s\n", response->body);
+  }
+  else {
+    printf("%s\n", response->body);
+  }
+  freeMessage(response);
 }
 
 void GetUserList(int sock)
