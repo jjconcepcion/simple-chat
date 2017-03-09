@@ -133,11 +133,13 @@ void Login(int sock) {
   fgets(username, sizeof(username), stdin);
   printf("Password: ");
   fgets(password, sizeof(password), stdin);
+  username[strlen(username)-1] = '\0';
+  password[strlen(password)-1] = '\0';
   
   /* generate authorization string; omit newline */
-  strncat(body, username, strlen(username)-1);
+  strncat(body, username, strlen(username));
   strncat(body, ":", 1);
-  strncat(body, password, strlen(password)-1);
+  strncat(body, password, strlen(password));
   
   /* send request */
   request = createMessage(LOGIN, body);
@@ -151,11 +153,13 @@ void Login(int sock) {
   
   if(response->opCode == OK) {
     /* set authorized userName */
-    strncpy(userName, username, strlen(username)-1);
+    strncpy(userName, username, strlen(username));
+    userName[strlen(username)] = '\0';
     printf("%s\n", response->body);
   }
   else {
     printf("%s\n", response->body);
+    close(sock);
   }
   freeMessage(response);
 }
