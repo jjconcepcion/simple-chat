@@ -116,6 +116,10 @@ void HandleChatClient(int clientSocket) {
     status = sendMessage(clientSocket, outgoing);
     if(status < 0)
       break;
+    
+    if(strncmp(text, "Bye", 3) == 0) 
+      break;
+   
   }
   freeMessage(incoming);
   freeMessage(outgoing);
@@ -162,6 +166,9 @@ void JoinChat() {
     outgoing = createMessage(CHAT, text);
     status = sendMessage(sock, outgoing);
     if(status < 0)
+      break;
+    
+    if(strncmp(text, "Bye", 3) == 0)
       break;
     
     incoming = readMessageFromSocket(sock);
