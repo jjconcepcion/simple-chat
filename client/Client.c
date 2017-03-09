@@ -5,12 +5,12 @@
 #include <string.h> /* for memset() */
 #include <unistd.h> /* for close() */
 
-#define RCVBUFSIZE 128  /* Size of receive buffer */
 #define MAX_MSG_LEN 4096
 #define MAX_NAME_LEN 20
 #define MAX_PASS_LEN 64 
+#define MAX_MSG_LEN 4096
 
-enum code { LOGIN, LIST, SEND, GET, OK, FAIL};
+enum code { LOGIN, LIST, SEND, GET, OK, FAIL, CHAT};
 
 typedef struct message {
   unsigned int length;
@@ -21,7 +21,7 @@ typedef struct message {
 } Message;
 
 void PrintMenuOptions();
-void ConnectToServer(int sock, struct sockaddr_in serverAddr);
+void ConnectToServer(int sock);
 void Login(int sock);
 void GetTextMessages(int sock);
 
@@ -32,13 +32,15 @@ int sendMessage(int sock, Message *msg);
 void freeMessage(Message *msg);
 void GetUserList(int sock);
 void SendTextMessage(int sock);
+void Disconnect(int sock);
+void HostChat();
+void JoinChat();
 
-static char userName[MAX_NAME_LEN] = "Guest\0";
+char userName[MAX_NAME_LEN] = "Guest\0";
 
 int main(int argc, char *argv[])
 {
   int sock; /* Socket descriptor */
-  struct sockaddr_in serverAddr; /* Echo server address */
   char option;
 
   /* Create a reliable, stream socket using TCP */
@@ -53,7 +55,7 @@ int main(int argc, char *argv[])
     
     switch(option) {
       case '0': 
-        ConnectToServer(sock, serverAddr);
+        ConnectToServer(sock);
         Login(sock);
         break;
       case '1': 
@@ -66,10 +68,12 @@ int main(int argc, char *argv[])
         GetTextMessages(sock);
         break;
       case '4': 
-        printf("you entered: %c\n", option);
+        Disconnect(sock);
+        HostChat();
         break;
       case '5': 
-        printf("you entered: %c\n", option);
+        Disconnect(sock);
+        JoinChat();
         break;
       default:
         printf("Invalid option\n");
@@ -93,8 +97,9 @@ void PrintMenuOptions(void)
   printf("Your option<enter a number>: ");
 }
 
-void ConnectToServer(int sock, struct sockaddr_in serverAddr) 
+void ConnectToServer(int sock) 
 {
+  struct sockaddr_in serverAddr; /* Echo server address */
   const int LEN = 20;
   char serverIP[LEN];
   char port[LEN];
@@ -255,4 +260,9 @@ void GetTextMessages(int sock) {
     fprintf(stderr, "Error: %s\n", response->body);
   }
   freeMessage(response);
+}
+
+void Disconnect(int sock) {
+  close(sock);
+  printf("--------------------disconnect with server--------------------\n");
 }

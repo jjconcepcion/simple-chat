@@ -16,7 +16,7 @@
 #define MAX_MSG 100
 #define MAX_MSG_LEN 4096
 
-enum code { LOGIN, LIST, SEND, GET, OK, FAIL};
+enum code { LOGIN, LIST, SEND, GET, OK, FAIL, CHAT};
 
 typedef struct message {
   unsigned int length;
@@ -54,7 +54,7 @@ void HandleTCPClient(int clientSocket)
     request = readMessageFromSocket(clientSocket);
     
     if(request == NULL)
-      exit(1);
+      break;
     
     switch(request->opCode) {
       case LOGIN:
@@ -83,6 +83,8 @@ void HandleTCPClient(int clientSocket)
     freeMessage(request);
     freeMessage(response);
   }
+  printf("Client disconnected\n");
+  close(clientSocket);
 }
 
 Message *UserList() {

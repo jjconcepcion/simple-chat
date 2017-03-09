@@ -3,7 +3,7 @@
 #include <sys/socket.h>
 #include <stdbool.h>
 
-enum code { LOGIN, LIST, SEND, GET, OK, FAIL};
+enum code { LOGIN, LIST, SEND, GET, OK, FAIL, CHAT};
 
 typedef struct message {
   unsigned int length;
